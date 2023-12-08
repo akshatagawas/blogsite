@@ -2,14 +2,19 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const User = require('./models/User');
+const Post = require('./models/Post');
 const app = express();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
+const multer = require('multer');
+const uploadMiddleware = multer({dest: 'uploads/'});
+const fs = require('fs');
 
 app.use(cors({credentials:true, origin:'http://localhost:3000'}));
 app.use(express.json());
 app.use(cookieParser());
+app.use('/uploads', express.static(__dirname + '/uploads'));
 
 const salt = bcrypt.genSaltSync(10);
 const secret = 'eghwgf7832uelwi';
@@ -36,7 +41,7 @@ app.post('/register', async (req,res) => {
 
 app.post('/login', async (req,res) => {
     const {username, password} = req.body;
-    const UserDoc = await User.findOne({username});
+    const UserDoc = await User.findOne({username}).maxTimeMS(30000);;
     // console.log(UserDoc)
     const passOk = bcrypt.compareSync(password, UserDoc.password);
     // res.json(passOk);
@@ -67,6 +72,42 @@ app.post('/logout', (req,res) => {
     res.cookie('token', '').json('ok');
 } );
 
+
+app.post('/post', uploadMiddleware.single('file'), async (req,res) => {
+    const {originalname, path} = req.file;
+    const parts = originalname.split('.');
+    const ext = parts[parts.length - 1];
+    const newPath = path+"."+ext;
+    fs.renameSync(path, newPath);
+    // res.json({ext});
+
+    const {token} = req.cookies;
+    jwt.verify(token, secret, {}, async (err, info) => {
+        if (err) throw err;
+        const {title, summary, content} = req.body;
+        const postDoc = await Post.create({
+            title,
+            summary,
+            content,
+            cover: newPath,
+            author: info.id,
+        });
+        res.json(postDoc);
+    });
+
+    
+
+    // res.json(postDoc);
+});
+
+app.get('/post', async (req,res) =>{
+    const data = await Post.find()
+                        .populate('author', ['username'])
+                        .sort({createdAt: -1})
+                        .limit(20)
+    // console.log(data);
+    res.json(data);
+});
 
 app.listen(4000);
 
