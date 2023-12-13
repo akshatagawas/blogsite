@@ -94,11 +94,54 @@ app.post('/post', uploadMiddleware.single('file'), async (req,res) => {
         });
         res.json(postDoc);
     });
-
-    
-
     // res.json(postDoc);
 });
+
+app.put('/post', uploadMiddleware.single('file'), async (req, res) => {
+    let newPath = null;
+
+    if (req.file) {
+        const { originalname, path } = req.file;
+        const parts = originalname.split('.');
+        const ext = parts[parts.length - 1];
+        newPath = path + "." + ext;
+        fs.renameSync(path, newPath);
+    }
+
+    const { token } = req.cookies;
+
+    jwt.verify(token, secret, {}, async (err, info) => {
+        if (err) throw err;
+
+        const { id, title, summary, content } = req.body;
+        const postDoc = await Post.findById(id);
+
+        if (!postDoc) {
+            return res.status(404).json("Post not found");
+        }
+
+        const isAuthor = JSON.stringify(postDoc.author) === JSON.stringify(info.id);
+
+        if (!isAuthor) {
+            return res.status(400).json("You are not the author!");
+        }
+
+        // Update only the fields that are provided, and use newPath if available
+        const updateFields = {
+            title,
+            summary,
+            content,
+            cover: newPath || postDoc.cover,
+        };
+
+        await postDoc.updateOne(updateFields);
+        // Fetch the updated document if needed
+        const updatedPostDoc = await Post.findById(id);
+
+        res.json(updatedPostDoc);
+    });
+});
+
 
 app.get('/post', async (req,res) =>{
     const data = await Post.find()
@@ -107,6 +150,12 @@ app.get('/post', async (req,res) =>{
                         .limit(20)
     // console.log(data);
     res.json(data);
+});
+
+app.get('/post/:id', async (req, res) => {
+    const {id} = req.params;
+    postDoc = await Post.findById(id).populate('author', ['username']);
+    res.json(postDoc);
 });
 
 app.listen(4000);
